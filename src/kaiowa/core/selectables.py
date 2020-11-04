@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 from typing import Callable
 
+from kaiowa.core.terms import Term, Field
 from kaiowa.core.utils import make_alias
 
 
@@ -45,12 +46,8 @@ class Selectable(abc.ABC):
 
         return Field(key, self)
 
-    @property
-    def alias(self) -> str:
-        return self._alias
-
     @abc.abstractmethod
-    def get_sql(self) -> str:
+    def __str__(self) -> str:
         """
         Returns the formatted SQL statement of the selectable, already formatted
         to contain the alias or the name of the selectable as the prefix of its
@@ -59,6 +56,10 @@ class Selectable(abc.ABC):
         :return: Formatted SQL statement.
         :rtype: str
         """
+
+    @property
+    def alias(self) -> str:
+        return self._alias
 
 
 class Table(Selectable):
@@ -84,9 +85,6 @@ class Table(Selectable):
 
     @property
     def alias(self) -> str:
-        return self._alias or self._name
-
-    def get_sql(self) -> str:
         return self._alias or self._name
 
     def as_(self, alias: str) -> Table:
@@ -131,6 +129,9 @@ class Query(Selectable):
     # Defines the terms to be selected by the Query.
     _terms: list[Term]
 
+    # Defines the criteria to filter the Query.
+    _criteria: list[Term]
+
     def __init__(self) -> None:
         self._operation = None
         self._selectable = None
@@ -139,9 +140,21 @@ class Query(Selectable):
         self._only = False
 
         self._terms = []
+        self._criteria = []
+
+    def __repr__(self) -> str:
+        return f"<Query: alias='{self.alias}'; operation='{self._operation}'>"
 
     def __str__(self) -> str:
-        return f"<Query: alias='{self.alias}'; operation='{self._operation}'>"
+        """
+        Returns the formatted SQL statement of the current Query.
+
+        :return: Formatted SQL statement of the current Query.
+        :rtype: str
+        """
+
+        builder: Callable[[], str] = getattr(self, f"_make_{self._operation}")
+        return builder()
 
     def as_(self, alias: str) -> Query:
         """
@@ -156,17 +169,6 @@ class Query(Selectable):
 
         self._alias = alias
         return self
-
-    def get_sql(self) -> str:
-        """
-        Returns the formatted SQL statement of the current Query.
-
-        :return: Formatted SQL statement of the current Query.
-        :rtype: str
-        """
-
-        builder: Callable[[], str] = getattr(self, f"_make_{self._operation}")
-        return builder()
 
     def select(self, *terms: Term) -> Query:
         """
@@ -228,6 +230,20 @@ class Query(Selectable):
         self._selectable = selectable
         return self
 
+    def where(self, *criteria: str) -> Query:
+        """
+        Adds a filter to the Query via the Criteria provided in this method.
+
+        :param criteria: Criteria used to filter the Query.
+        :type criteria: Sequence[Criterion]
+
+        :return: Current Query.
+        :rtype: Query
+        """
+
+        self._criteria.extend(criteria)
+        return self
+
     def _make_select(self) -> str:
         sql = "SELECT DISTINCT" if self._distinct else "SELECT"
 
@@ -237,20 +253,31 @@ class Query(Selectable):
         terms = self._parse_terms()
 
         if isinstance(entity, Table):
-            sql += f" {terms} FROM {entity.get_sql()}"
+            sql += f" {terms} FROM {str(entity)}"
 
         if isinstance(entity, Query):
-            sql += f" {terms} FROM ({entity.get_sql()})"
+            sql += f" {terms} FROM ({str(entity)})"
 
         sql = make_alias(sql, alias)
+
+        if self._criteria:
+            sql += self._parse_criteria()
 
         return sql
 
     def _make_delete(self) -> str:
         entity = self._selectable
 
-        sql = f"DELETE FROM ONLY {entity}" if self._only else f"DELETE FROM {entity}"
+        sql = (
+            f"DELETE FROM ONLY {str(entity)}"
+            if self._only
+            else f"DELETE FROM {str(entity)}"
+        )
+
         sql = make_alias(sql, entity.alias)
+
+        if self._criteria:
+            sql += self._parse_criteria()
 
         return sql
 
@@ -260,46 +287,7 @@ class Query(Selectable):
             or f"{self._selectable.alias}.*"
         )
 
-
-class Term(abc.ABC):
-    """
-    A Term is anything that can be used to filter or manipulate
-    the resulting rows of the current Query.
-
-    Whatever is used to identify the Term, it **MUST** represent a `Column`
-    of the selectable used in the Query. The identifier is used to name
-    the column in the Query Result returned by the database.
-
-    The terms supported by Kaiowa ORM are the following::
-
-        - Scalar: Simple scalar value.
-        - Field: Representation of a column of the selectable.
-        - Operators: Operators used to filter the Query results.
-        - Functions: Functions that will return a manipulated result.
-
-    If the Term is a Function, it **MUST** be aliased by the name of the column
-    used by it or, if more than one column is used, it **MUST** have a name
-    that will not cause collisions with the other Terms of the Query.
-    """
-
-    @abc.abstractmethod
-    def get_sql(self) -> str:
-        """
-        Returns the formatted SQL of the Term, already containing the alias
-        used to identity the Term on the filtering step of the Query.
-
-        :return: Formatted SQL statement of the Term.
-        :rtype: str
-        """
-
-
-class Field(Term):
-    def __init__(self, name: str, parent: Selectable) -> None:
-        self.name = name
-        self.parent = parent
-
-    def __str__(self) -> str:
-        return f"{self.parent.alias}.{self.name}"
-
-    def get_sql(self) -> str:
-        pass
+    def _parse_criteria(self) -> str:
+        sql = " WHERE "
+        sql += "".join([str(criterion) for criterion in self._criteria])
+        return sql
