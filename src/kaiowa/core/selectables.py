@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 from typing import Callable
 
+from kaiowa.core.criteria import Criterion
 from kaiowa.core.terms import Term, Field
 from kaiowa.core.utils import make_alias
 
@@ -130,7 +131,7 @@ class Query(Selectable):
     _terms: list[Term]
 
     # Defines the criteria to filter the Query.
-    _criteria: list[Term]
+    _criteria: list[Criterion]
 
     def __init__(self) -> None:
         self._operation = None
@@ -230,7 +231,7 @@ class Query(Selectable):
         self._selectable = selectable
         return self
 
-    def where(self, *criteria: str) -> Query:
+    def where(self, *criteria: Criterion) -> Query:
         """
         Adds a filter to the Query via the Criteria provided in this method.
 
@@ -243,6 +244,19 @@ class Query(Selectable):
 
         self._criteria.extend(criteria)
         return self
+
+    def group_by(self, *criteria: Criterion) -> Query:
+        """
+        Groups the result of the query using the provided Criteria.
+
+        :param criteria: Criteria used to group the result of the Query.
+        :type criteria: Sequence[Criterion]
+
+        :return: Current Query.
+        :rtype: Query
+        """
+
+        raise NotImplementedError
 
     def _make_select(self) -> str:
         sql = "SELECT DISTINCT" if self._distinct else "SELECT"
