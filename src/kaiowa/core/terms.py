@@ -187,9 +187,17 @@ class Term(abc.ABC):
 
 
 class Field(Term):
-    def __init__(self, name: str, parent: Selectable) -> None:
-        super().__init__()
+    """
+    Representation of a Selectable's Column.
 
+    :param name: Name of the Column.
+    :type name: str
+
+    :param parent: Selectable (Table/SubQuery) to whom the Field pertains to.
+    :type parent: Selectable
+    """
+
+    def __init__(self, name: str, parent: Selectable) -> None:
         self.name = name
         self.parent = parent
 

@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import abc
-from typing import Callable
+from enum import Enum
+from typing import Callable, Sequence
 
 from kaiowa.core.criteria import Criterion
 from kaiowa.core.terms import Term, Field
 from kaiowa.core.utils import make_alias
+
+
+class JoinTypes(str, Enum):
+    join = "JOIN"
+    inner_join = "INNER JOIN"
+    outer_join = "OUTER JOIN"
+    left_join = "LEFT JOIN"
+    right_join = "RIGHT JOIN"
+    left_outer_join = "LEFT OUTER JOIN"
+    right_outer_join = "RIGHT OUTER JOIN"
+    full_outer_join = "FULL OUTER JOIN"
+    cross_join = "CROSS JOIN"
 
 
 class Selectable(abc.ABC):
@@ -121,6 +134,9 @@ class Query(Selectable):
     # Defines the Selectable being queried.
     _selectable: Selectable
 
+    # Defines the selectables being joined.
+    _joins: list[list[JoinTypes, Selectable, Sequence[Criterion]]]
+
     # Defines that the select operation MUST return distinct rows only.
     _distinct: bool
 
@@ -136,6 +152,7 @@ class Query(Selectable):
     def __init__(self) -> None:
         self._operation = None
         self._selectable = None
+        self._joins = []
 
         self._distinct = False
         self._only = False
@@ -231,6 +248,66 @@ class Query(Selectable):
         self._selectable = selectable
         return self
 
+    def join(self, selectable: Selectable) -> Query:
+        """
+        Performs a Join on the specified Selectable.
+
+        :param selectable: Selectable to be joined.
+        :type selectable: Selectable
+
+        :return: Current Query.
+        :rtype: Query
+        """
+
+        self._joins.append([JoinTypes.join, selectable, None])
+        return self
+
+    def inner_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.inner_join, selectable, None])
+        return self
+
+    def outer_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.outer_join, selectable, None])
+        return self
+
+    def left_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.left_join, selectable, None])
+        return self
+
+    def right_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.right_join, selectable, None])
+        return self
+
+    def left_outer_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.left_outer_join, selectable, None])
+        return self
+
+    def right_outer_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.right_outer_join, selectable, None])
+        return self
+
+    def full_outer_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.full_outer_join, selectable, None])
+        return self
+
+    def cross_join(self, selectable: Selectable) -> Query:
+        self._joins.append([JoinTypes.cross_join, selectable, None])
+        return self
+
+    def on(self, *filters: Criterion) -> Query:
+        """
+        Defines the fields of the selectables used to perform the joins.
+
+        :param filters: Filters to apply on the join.
+        :type filters: Sequence[Criterion]
+
+        :return: Current Query.
+        :rtype: Query
+        """
+
+        self._joins[-1][2] = filters
+        return self
+
     def where(self, *criteria: Criterion) -> Query:
         """
         Adds a filter to the Query via the Criteria provided in this method.
@@ -274,6 +351,9 @@ class Query(Selectable):
 
         sql = make_alias(sql, alias)
 
+        if self._joins:
+            sql += self._parse_joins()
+
         if self._criteria:
             sql += self._parse_criteria()
 
@@ -300,6 +380,20 @@ class Query(Selectable):
             ",".join([str(term) for term in self._terms])
             or f"{self._selectable.alias}.*"
         )
+
+    def _parse_joins(self) -> str:
+        sql = ""
+
+        for join_type, selectable, filters in self._joins:
+            # Makes the join call.
+            sql += f" {join_type.value} {make_alias(str(selectable), selectable.alias)}"
+
+            if filters:
+                # Defines the "ON" filters.
+                sql += " ON "
+                sql += "".join([str(criterion) for criterion in filters])
+
+        return sql
 
     def _parse_criteria(self) -> str:
         sql = " WHERE "
